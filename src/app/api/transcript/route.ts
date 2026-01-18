@@ -1,303 +1,169 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Innertube, UniversalCache } from 'youtubei.js';
-import { YoutubeTranscript } from 'youtube-transcript';
-// @ts-ignore
-import { HttpsProxyAgent } from 'https-proxy-agent';
-
-// Singleton instance for performance
-let youtube: Innertube | null = null;
-
-async function getYoutube() {
-    if (!youtube) {
-        try {
-            console.log("[Transcript] Initializing Innertube with ANDROID client...");
-
-            const options: any = {
-                cache: new UniversalCache(false),
-                generate_session_locally: true,
-                retrieve_player: false,
-                // @ts-ignore
-                device_type: 'ANDROID' // Force Android client
-            };
-
-            // Add Proxy if available in Env
-            if (process.env.PROXY_URL) {
-                console.log("[Transcript] Using Proxy: " + process.env.PROXY_URL);
-                options.http_agent = new HttpsProxyAgent(process.env.PROXY_URL);
-            }
-
-            youtube = await Innertube.create(options);
-        } catch (e) {
-            console.error("Innertube Init Error:", e);
-            throw e;
-        }
-    }
-    return youtube;
-}
 
 export const maxDuration = 60; // Allow 60 seconds for execution
+
+// List of public Piped API instances to try in order
+const PIPED_INSTANCES = [
+    'https://pipedapi.kavin.rocks',
+    'https://api.piped.privacy.com.de',
+    'https://pipedapi.tokhmi.xyz',
+    'https://api.piped.otbea.org',
+    'https://pipedapi.aeong.one'
+];
+
+async function fetchWithTimeout(url: string, options: any = {}, timeout = 10000) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    try {
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
+        clearTimeout(id);
+        return response;
+    } catch (err) {
+        clearTimeout(id);
+        throw err;
+    }
+}
+
+// Convert VTT time (00:00:05.000) to seconds (float)
+function vttTimeToSeconds(vttTime: string): number {
+    if (!vttTime) return 0;
+    const parts = vttTime.split(':');
+    let seconds = 0;
+    if (parts.length === 3) {
+        // HH:MM:SS.mmm
+        seconds += parseInt(parts[0]) * 3600;
+        seconds += parseInt(parts[1]) * 60;
+        seconds += parseFloat(parts[2]);
+    } else if (parts.length === 2) {
+        // MM:SS.mmm
+        seconds += parseInt(parts[0]) * 60;
+        seconds += parseFloat(parts[1]);
+    }
+    return seconds;
+}
 
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
         const { url, lang } = body;
-        console.log(`[Transcript] Request for URL: ${url}, Lang: ${lang}`);
+        console.log(`[Transcript] Piped Request for URL: ${url}, Lang: ${lang}`);
 
-        if (!url) {
-            return NextResponse.json({ error: "Missing URL" }, { status: 400 });
-        }
+        if (!url) return NextResponse.json({ error: "Missing URL" }, { status: 400 });
 
         const videoIdMatch = url.match(/(?:v=|youtu\.be\/|\/embed\/|\/v\/)([a-zA-Z0-9_-]{11})/);
         const videoId = videoIdMatch ? videoIdMatch[1] : null;
 
-        if (!videoId) {
-            return NextResponse.json({ error: "Invalid YouTube URL" }, { status: 400 });
-        }
+        if (!videoId) return NextResponse.json({ error: "Invalid YouTube URL" }, { status: 400 });
 
-        const yt = await getYoutube();
-        let errorLog: string[] = [];
+        let transcriptData = null;
+        let availableLanguages = [];
+        let errorLog = [];
 
-        // 0. Get Basic Info
-        let info;
-        try {
-            console.log(`[Transcript] Fetching info for ${videoId}`);
-            info = await yt.getInfo(videoId);
-            console.log(`[Transcript] Info fetched. Title: ${info.basic_info.title}`);
-        } catch (e: any) {
-            console.error("[Transcript] getInfo failed:", e);
-            return NextResponse.json({ error: `Video unavailable: ${e.message}` }, { status: 404 });
-        }
-
-        // Prepare available languages for decision making
-        const captionTracks = info.captions?.caption_tracks || [];
-        const availableLanguages = captionTracks.map((track: any) => ({
-            code: track.language_code,
-            name: track.name.text,
-            is_generated: track.kind === 'asr',
-            url: track.base_url
-        }));
-
-        // Determine target language (User preference > First available > 'en')
-        const targetLang = lang || (availableLanguages.length > 0 ? availableLanguages[0].code : 'en');
-        console.log(`[Transcript] Targets: RequestLang=${lang}, DetectedFirst=${availableLanguages[0]?.code}, FinalTarget=${targetLang}`);
-
-        // 1. Try Innertube Transcript
-        let transcriptData: any = null;
-        try {
-            console.log(`[Transcript] Attempting Innertube transcript fetch...`);
-            transcriptData = await info.getTranscript();
-        } catch (innerError: any) {
-            const msg = `Innertube Method Failed: ${innerError.message}`;
-            console.error(msg);
-            errorLog.push(msg);
-
-            // 1b. Manual XML Fetch (Robust Fallback for 400 errors)
+        // Rotate through Piped instances
+        for (const instance of PIPED_INSTANCES) {
             try {
-                if (captionTracks.length > 0) {
-                    // Find best track (try to match targetLang, otherwise first)
-                    const sortTracks = [...captionTracks].sort((a: any, b: any) => {
-                        if (a.language_code === targetLang) return -1;
-                        if (b.language_code === targetLang) return 1;
-                        return 0;
-                    });
-                    const bestTrack = sortTracks[0];
-                    console.log(`[Transcript] Manual fetch using track: ${bestTrack.language_code}`);
+                console.log(`[Transcript] Trying Piped Instance: ${instance}`);
+                const streamUrl = `${instance}/streams/${videoId}`;
+                const res = await fetchWithTimeout(streamUrl, {}, 8000); // 8s timeout per instance
 
-                    if (bestTrack.base_url) {
-                        // ADD HEADERS HERE to mimic browser
-                        const xmlRes = await fetch(bestTrack.base_url, {
-                            headers: {
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                                'Referer': 'https://www.youtube.com/',
-                                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                if (!res.ok) {
+                    errorLog.push(`${instance} returned ${res.status}`);
+                    continue;
+                }
+
+                const data = await res.json();
+                const subtitles = data.subtitles || [];
+
+                if (subtitles.length === 0) {
+                    errorLog.push(`${instance} returned no subtitles`);
+                    continue; // Try next instance? Maybe specific to instance caching.
+                }
+
+                // Prepare available languages list
+                availableLanguages = subtitles.map((sub: any) => ({
+                    code: sub.code,
+                    name: sub.name,
+                    is_generated: sub.autoGenerated,
+                    url: sub.url
+                }));
+
+                // Select best subtitle
+                const targetLang = lang || 'en';
+                let selectedSub = subtitles.find((s: any) => s.code === targetLang && !s.autoGenerated);
+                if (!selectedSub) selectedSub = subtitles.find((s: any) => s.code === targetLang); // Try autogen same lang
+                if (!selectedSub) selectedSub = subtitles.find((s: any) => s.code === 'en'); // Fallback to English
+                if (!selectedSub) selectedSub = subtitles[0]; // Fallback to first
+
+                if (selectedSub) {
+                    console.log(`[Transcript] Found subtitle: ${selectedSub.name} (${selectedSub.code})`);
+
+                    // Fetch the VTT content
+                    const vttResponse = await fetchWithTimeout(selectedSub.url);
+                    const vttText = await vttResponse.text();
+
+                    // Parse VTT
+                    const items = [];
+                    // Robust VTT regex
+                    const vttRegex = /(?:(\d{2}:)?\d{2}:\d{2}\.\d{3})\s-->\s(?:(\d{2}:)?\d{2}:\d{2}\.\d{3}).*?\n([\s\S]*?)(?=\n\n|\n\d|$)/g;
+                    const timeRegex = /((?:\d{2}:)?\d{2}:\d{2}\.\d{3})\s-->\s((?:\d{2}:)?\d{2}:\d{2}\.\d{3})/;
+
+                    // Initial split by double newline to handle cues roughly
+                    const cues = vttText.split(/\n\n/);
+
+                    for (const cue of cues) {
+                        const timeMatch = timeRegex.exec(cue);
+                        if (timeMatch) {
+                            const start = vttTimeToSeconds(timeMatch[1]);
+                            const end = vttTimeToSeconds(timeMatch[2]);
+                            // Clean text: remove timestamps, remove tags like <c.colorE5E5E5>, remove header lines
+                            let textRaw = cue.replace(timeRegex, '').replace(/WEBVTT.*/, '').replace(/^\d+$/, '').trim();
+                            // Remove tags
+                            const text = textRaw.replace(/<[^>]*>/g, '').replace(/\n/g, ' ').trim();
+
+                            if (text) {
+                                items.push({
+                                    text: text,
+                                    offset: { seconds: start },
+                                    duration: { seconds: end - start }
+                                });
                             }
-                        });
-
-                        if (!xmlRes.ok) throw new Error(`XML fetch status: ${xmlRes.status}`);
-
-                        const xmlText = await xmlRes.text();
-
-                        // Simple Regex Parse
-                        const items = [];
-                        const regex = /<text start="([\d.]+)" dur="([\d.]+)">([^<]+)<\/text>/g;
-                        let match;
-                        while ((match = regex.exec(xmlText)) !== null) {
-                            items.push({
-                                text: match[3]
-                                    .replace(/&amp;/g, '&')
-                                    .replace(/&quot;/g, '"')
-                                    .replace(/&#39;/g, "'")
-                                    .replace(/&lt;/g, '<')
-                                    .replace(/&gt;/g, '>'),
-                                offset: { seconds: parseFloat(match[1]) },
-                                duration: { seconds: parseFloat(match[2]) }
-                            });
-                        }
-
-                        if (items.length > 0) {
-                            transcriptData = { transcript: items };
-                            console.log(`[Transcript] Manual XML parse successful. Items: ${items.length}`);
-                        } else {
-                            throw new Error("XML parsed but no items found");
                         }
                     }
-                } else {
-                    throw new Error("No caption tracks available for manual fetch");
+
+                    // Check results
+                    if (items.length > 0) {
+                        transcriptData = items;
+                        break; // Success! Stop loop.
+                    }
                 }
-            } catch (manualError: any) {
-                const msg = `Manual XML Method Failed: ${manualError.message}`;
-                console.error(msg);
-                errorLog.push(msg);
+            } catch (instErr: any) {
+                console.error(`[Transcript] Error with ${instance}:`, instErr.message);
+                errorLog.push(`${instance} error: ${instErr.message}`);
             }
         }
 
-        // 2. Fallback to youtube-transcript library
-        let fallbackTranscript: any = null;
         if (!transcriptData) {
-            try {
-                console.log(`[Transcript] Attempting fallback with youtube-transcript using lang: ${targetLang}...`);
-
-                // @ts-ignore
-                const backupData = await YoutubeTranscript.fetchTranscript(videoId, { lang: targetLang });
-
-                fallbackTranscript = {
-                    transcript: backupData.map((item: any) => ({
-                        text: item.text,
-                        offset: { seconds: item.offset / 1000 },
-                        duration: { seconds: item.duration / 1000 }
-                    }))
-                };
-                console.log(`[Transcript] Fallback successful.`);
-            } catch (fallbackError: any) {
-                const msg = `YoutubeTranscript (Lang=${targetLang}) Failed: ${fallbackError.message}`;
-                console.error(msg);
-                errorLog.push(msg);
-
-                // 2b. BLIND FALLBACK: Try without any language param (let library decide)
-                try {
-                    console.log(`[Transcript] Attempting BLIND fallback (no lang)...`);
-                    // @ts-ignore
-                    const blindData = await YoutubeTranscript.fetchTranscript(videoId);
-
-                    fallbackTranscript = {
-                        transcript: blindData.map((item: any) => ({
-                            text: item.text,
-                            offset: { seconds: item.offset / 1000 },
-                            duration: { seconds: item.duration / 1000 }
-                        }))
-                    };
-                    console.log(`[Transcript] Blind fallback successful.`);
-                } catch (blindError: any) {
-                    const msg = `Blind Fallback Failed: ${blindError.message}`;
-                    console.error(msg);
-                    errorLog.push(msg);
-                }
-            }
-        }
-
-        // 3. FINAL FALLBACK: Third-Party APIs (Invidious)
-        if (!transcriptData && !fallbackTranscript) {
-            console.log("[Transcript] All local methods failed. Attempting Invidious API fallback...");
-
-            const INVIDIOUS_INSTANCES = [
-                'https://inv.tux.pizza',
-                'https://vid.puffyan.us',
-                'https://invidious.jing.rocks',
-                'https://yt.artemislena.eu'
-            ];
-
-            for (const instance of INVIDIOUS_INSTANCES) {
-                try {
-                    console.log(`[Transcript] Trying Invidious instance: ${instance}`);
-
-                    const listRes = await fetch(`${instance}/api/v1/captions/${videoId}`, {
-                        headers: { 'User-Agent': 'Mozilla/5.0' }
-                    });
-
-                    if (!listRes.ok) continue;
-
-                    const tracks: any[] = await listRes.json();
-                    const captions = tracks.find((t: any) => t.languageCode === (lang || 'en')) || tracks[0];
-
-                    if (captions) {
-                        const vttUrl = `${instance}${captions.url}`;
-                        const vttRes = await fetch(vttUrl);
-                        const vttText = await vttRes.text();
-
-                        // Parse WebVTT
-                        const items = [];
-                        // Regex modified for ES2017 compatibility (no 's' flag)
-                        // Matches: timestamp --> timestamp ... newline ... content
-                        const vttRegex = /(?:(\d{2}):)?(\d{2}):(\d{2})\.(\d{3})\s-->\s(?:(\d{2}):)?(\d{2}):(\d{2})\.(\d{3}).*?\n([\s\S]*?)(?=\n\n|\n\d|$)/g;
-
-                        let match;
-                        while ((match = vttRegex.exec(vttText)) !== null) {
-                            const getSecs = (h: string, m: string, s: string, ms: string) => {
-                                return (parseInt(h || '0') * 3600) + (parseInt(m) * 60) + parseInt(s) + (parseInt(ms) / 1000);
-                            };
-
-                            const start = getSecs(match[1], match[2], match[3], match[4]);
-                            const end = getSecs(match[5], match[6], match[7], match[8]);
-
-                            items.push({
-                                text: match[9].replace(/\n/g, ' ').trim(),
-                                offset: { seconds: start },
-                                duration: { seconds: end - start }
-                            });
-                        }
-
-                        if (items.length > 0) {
-                            fallbackTranscript = { transcript: items };
-                            console.log(`[Transcript] Invidious fallback successful via ${instance}`);
-                            break;
-                        }
-                    }
-                } catch (invError) {
-                    console.error(`[Transcript] Invidious ${instance} failed:`, invError);
-                }
-            }
-        }
-
-        // 4. Select Data
-        let selectedTranscript = transcriptData || fallbackTranscript;
-
-        if (!selectedTranscript) {
-            // Return detailed errors to help debug
             return NextResponse.json({
-                error: "No transcript found. All methods failed.",
+                error: "No transcript found. All Piped instances failed.",
                 debug_log: errorLog
             }, { status: 404 });
         }
 
-        // 4. Handle Language Selection (Only applicable if Innertube succeeded and has tracks)
-        if (lang && transcriptData && !fallbackTranscript) {
-            // Only try selecting language if we are using Innertube data
-            try {
-                // @ts-ignore 
-                const translated = await transcriptData.selectLanguage(lang);
-                if (translated) selectedTranscript = translated;
-            } catch (e) {
-                console.log(`Could not select language ${lang}, falling back.`);
-            }
-        }
-
-        // 5. Normalize Output
-        const segments = (selectedTranscript as any).transcript || [];
-
-        const normalizedTranscript = segments.map((seg: any) => ({
-            text: seg.text || "",
-            start: Number(seg.offset?.seconds || seg.offset || 0),
-            duration: Number(seg.duration?.seconds || seg.duration || 0)
-        }));
-
+        // Return standardized format
         return NextResponse.json({
             success: true,
             video_id: videoId,
             language_code: lang || "en",
-            language_name: lang || "Default",
-            available_languages: availableLanguages,
-            transcript: normalizedTranscript
+            transcript: transcriptData.map(item => ({
+                text: item.text,
+                start: item.offset.seconds,
+                duration: item.duration.seconds
+            })),
+            available_languages: availableLanguages
         });
 
     } catch (e: any) {
