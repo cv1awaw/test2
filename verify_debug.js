@@ -3,7 +3,7 @@ const { Innertube, UniversalCache } = require('youtubei.js');
 const { YoutubeTranscript } = require('youtube-transcript');
 
 (async () => {
-    const videoId = '9XuyZP2y8H0'; // The user's video
+    const videoId = 'PVEi8KnD56o'; // The user's new failing video
     console.log(`Debug: Testing video ${videoId}`);
 
     // Test 1: Innertube

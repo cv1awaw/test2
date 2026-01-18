@@ -94,6 +94,24 @@ export async function POST(req: NextRequest) {
                 console.log(`[Transcript] Fallback successful.`);
             } catch (fallbackError) {
                 console.error("[Transcript] Fallback failed:", fallbackError);
+
+                // 2b. BLIND FALLBACK: Try without any language param (let library decide)
+                try {
+                    console.log(`[Transcript] Attempting BLIND fallback (no lang)...`);
+                    // @ts-ignore
+                    const blindData = await YoutubeTranscript.fetchTranscript(videoId);
+
+                    fallbackTranscript = {
+                        transcript: blindData.map((item: any) => ({
+                            text: item.text,
+                            offset: { seconds: item.offset / 1000 },
+                            duration: { seconds: item.duration / 1000 }
+                        }))
+                    };
+                    console.log(`[Transcript] Blind fallback successful.`);
+                } catch (blindError) {
+                    console.error("[Transcript] Blind fallback failed:", blindError);
+                }
             }
         }
 
