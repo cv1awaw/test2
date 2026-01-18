@@ -196,7 +196,70 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // 3. Select Data
+        // 3. FINAL FALLBACK: Third-Party APIs (Invidious)
+        if (!transcriptData && !fallbackTranscript) {
+            console.log("[Transcript] All local methods failed. Attempting Invidious API fallback...");
+
+            const INVIDIOUS_INSTANCES = [
+                'https://inv.tux.pizza',
+                'https://vid.puffyan.us',
+                'https://invidious.jing.rocks',
+                'https://yt.artemislena.eu'
+            ];
+
+            for (const instance of INVIDIOUS_INSTANCES) {
+                try {
+                    console.log(`[Transcript] Trying Invidious instance: ${instance}`);
+
+                    const listRes = await fetch(`${instance}/api/v1/captions/${videoId}`, {
+                        headers: { 'User-Agent': 'Mozilla/5.0' }
+                    });
+
+                    if (!listRes.ok) continue;
+
+                    const tracks: any[] = await listRes.json();
+                    const captions = tracks.find((t: any) => t.languageCode === (lang || 'en')) || tracks[0];
+
+                    if (captions) {
+                        const vttUrl = `${instance}${captions.url}`;
+                        const vttRes = await fetch(vttUrl);
+                        const vttText = await vttRes.text();
+
+                        // Parse WebVTT
+                        const items = [];
+                        // Regex modified for ES2017 compatibility (no 's' flag)
+                        // Matches: timestamp --> timestamp ... newline ... content
+                        const vttRegex = /(?:(\d{2}):)?(\d{2}):(\d{2})\.(\d{3})\s-->\s(?:(\d{2}):)?(\d{2}):(\d{2})\.(\d{3}).*?\n([\s\S]*?)(?=\n\n|\n\d|$)/g;
+
+                        let match;
+                        while ((match = vttRegex.exec(vttText)) !== null) {
+                            const getSecs = (h: string, m: string, s: string, ms: string) => {
+                                return (parseInt(h || '0') * 3600) + (parseInt(m) * 60) + parseInt(s) + (parseInt(ms) / 1000);
+                            };
+
+                            const start = getSecs(match[1], match[2], match[3], match[4]);
+                            const end = getSecs(match[5], match[6], match[7], match[8]);
+
+                            items.push({
+                                text: match[9].replace(/\n/g, ' ').trim(),
+                                offset: { seconds: start },
+                                duration: { seconds: end - start }
+                            });
+                        }
+
+                        if (items.length > 0) {
+                            fallbackTranscript = { transcript: items };
+                            console.log(`[Transcript] Invidious fallback successful via ${instance}`);
+                            break;
+                        }
+                    }
+                } catch (invError) {
+                    console.error(`[Transcript] Invidious ${instance} failed:`, invError);
+                }
+            }
+        }
+
+        // 4. Select Data
         let selectedTranscript = transcriptData || fallbackTranscript;
 
         if (!selectedTranscript) {
