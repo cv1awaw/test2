@@ -13,10 +13,9 @@ async function getYoutube() {
             youtube = await Innertube.create({
                 cache: new UniversalCache(false),
                 generate_session_locally: true,
-                retrieve_player: false
-                // device_type: 'ANDROID' // Using default wrapper but could enforce if needed. 
-                // Note: The library usually rotates clients, but let's stick to default first with better headers in manual fetch.
-                // If this fails, we can explicitly set device_type: 'ANDROID' in next iteration.
+                retrieve_player: false,
+                // @ts-ignore
+                device_type: 'ANDROID' // Force Android client to bypass Web-based IP blocks
             });
         } catch (e) {
             console.error("Innertube Init Error:", e);
