@@ -14,11 +14,18 @@ class handler(BaseHTTPRequestHandler):
             url = body.get('url')
             target_lang = body.get('lang', 'en') # Default to English if not specified
             
+            # Debug libraries
+            import pkg_resources
+            try:
+                version = pkg_resources.get_distribution("youtube-transcript-api").version
+            except:
+                version = "unknown"
+
             if not url:
                 self.send_response(400)
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps({"error": "Missing 'url' in request body"}).encode('utf-8'))
+                self.wfile.write(json.dumps({"error": f"Missing 'url'. Library Version: {version}"}).encode('utf-8'))
                 return
 
             # Robust Video ID Extraction
@@ -105,12 +112,18 @@ class handler(BaseHTTPRequestHandler):
                     "error": "Transcripts are disabled or not available for this video."
                 }).encode('utf-8'))
             except Exception as e:
+                import pkg_resources
+                try:
+                    version = pkg_resources.get_distribution("youtube-transcript-api").version
+                except:
+                    version = "unknown"
+                    
                 self.send_response(500)
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps({
                     "success": False, 
-                    "error": str(e)
+                    "error": f"{str(e)} (Lib Version: {version})"
                 }).encode('utf-8'))
 
         except Exception as e:
