@@ -72,7 +72,51 @@ export async function POST(req: NextRequest) {
             console.log(`[Transcript] Attempting Innertube transcript fetch...`);
             transcriptData = await info.getTranscript();
         } catch (innerError) {
-            console.error("[Transcript] Innertube getTranscript failed, trying fallback:", innerError);
+            console.error("[Transcript] Innertube getTranscript failed, trying manual XML fetch:", innerError);
+
+            // 1b. Manual XML Fetch (Robust Fallback for 400 errors)
+            try {
+                const tracks = info.captions?.caption_tracks;
+                if (tracks && tracks.length > 0) {
+                    // Find best track (try to match targetLang, otherwise first)
+                    const sortTracks = [...tracks].sort((a, b) => {
+                        if (a.language_code === targetLang) return -1;
+                        if (b.language_code === targetLang) return 1;
+                        return 0;
+                    });
+                    const bestTrack = sortTracks[0];
+                    console.log(`[Transcript] Manual fetch using track: ${bestTrack.language_code}`);
+
+                    if (bestTrack.base_url) {
+                        const xmlRes = await fetch(bestTrack.base_url);
+                        const xmlText = await xmlRes.text();
+
+                        // Simple Regex Parse
+                        const items = [];
+                        const regex = /<text start="([\d.]+)" dur="([\d.]+)">([^<]+)<\/text>/g;
+                        let match;
+                        while ((match = regex.exec(xmlText)) !== null) {
+                            items.push({
+                                text: match[3]
+                                    .replace(/&amp;/g, '&')
+                                    .replace(/&quot;/g, '"')
+                                    .replace(/&#39;/g, "'")
+                                    .replace(/&lt;/g, '<')
+                                    .replace(/&gt;/g, '>'),
+                                offset: { seconds: parseFloat(match[1]) },
+                                duration: { seconds: parseFloat(match[2]) }
+                            });
+                        }
+
+                        if (items.length > 0) {
+                            transcriptData = { transcript: items };
+                            console.log(`[Transcript] Manual XML parse successful. Items: ${items.length}`);
+                        }
+                    }
+                }
+            } catch (manualError) {
+                console.error("[Transcript] Manual XML fetch failed:", manualError);
+            }
         }
 
         // 2. Fallback to youtube-transcript library
