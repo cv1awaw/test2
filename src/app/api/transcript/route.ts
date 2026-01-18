@@ -53,6 +53,19 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: `Video unavailable: ${e.message}` }, { status: 404 });
         }
 
+        // Prepare available languages for decision making
+        const captionTracks = info.captions?.caption_tracks || [];
+        const availableLanguages = captionTracks.map((track: any) => ({
+            code: track.language_code,
+            name: track.name.text,
+            is_generated: track.kind === 'asr',
+            url: track.base_url
+        }));
+
+        // Determine target language (User preference > First available > 'en')
+        const targetLang = lang || (availableLanguages.length > 0 ? availableLanguages[0].code : 'en');
+        console.log(`[Transcript] Targets: RequestLang=${lang}, DetectedFirst=${availableLanguages[0]?.code}, FinalTarget=${targetLang}`);
+
         // 1. Try Innertube Transcript
         let transcriptData: any = null;
         try {
@@ -66,10 +79,10 @@ export async function POST(req: NextRequest) {
         let fallbackTranscript: any = null;
         if (!transcriptData) {
             try {
-                console.log(`[Transcript] Attempting fallback with youtube-transcript...`);
+                console.log(`[Transcript] Attempting fallback with youtube-transcript using lang: ${targetLang}...`);
 
                 // @ts-ignore
-                const backupData = await YoutubeTranscript.fetchTranscript(videoId, { lang: lang || 'en' });
+                const backupData = await YoutubeTranscript.fetchTranscript(videoId, { lang: targetLang });
 
                 fallbackTranscript = {
                     transcript: backupData.map((item: any) => ({
@@ -88,18 +101,10 @@ export async function POST(req: NextRequest) {
         let selectedTranscript = transcriptData || fallbackTranscript;
 
         if (!selectedTranscript) {
-            return NextResponse.json({ error: "No transcript found (both strategies failed)." }, { status: 404 });
+            return NextResponse.json({ error: "No transcript found (both strategies failed). Video might not have captions." }, { status: 404 });
         }
 
         // 4. Handle Language Selection (Only applicable if Innertube succeeded and has tracks)
-        const captionTracks = info.captions?.caption_tracks || [];
-        const availableLanguages = captionTracks.map((track: any) => ({
-            code: track.language_code,
-            name: track.name.text,
-            is_generated: track.kind === 'asr',
-            url: track.base_url
-        }));
-
         if (lang && transcriptData && !fallbackTranscript) {
             // Only try selecting language if we are using Innertube data
             try {
