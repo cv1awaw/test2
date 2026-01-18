@@ -275,119 +275,175 @@ export default function TestPage() {
 
                     {/* YOUTUBE */}
                     {activeTab === 'youtube' && (
-                        <div className="max-w-3xl mx-auto animate-in fade-in zoom-in-95 duration-300">
-                            <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10 space-y-6 relative overflow-hidden">
-                                <div className="absolute top-0 right-0 p-32 bg-red-600/5 rounded-full blur-3xl -z-10" />
+                        <div className="max-w-7xl mx-auto animate-in fade-in zoom-in-95 duration-300">
 
-                                <div className="space-y-4">
-                                    <label className="text-sm font-medium text-gray-400 ml-1">YouTube URL</label>
-                                    <div className="flex gap-2">
-                                        <div className="relative group flex-1">
-                                            <input
-                                                type="text"
-                                                className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 pl-12 text-gray-200 focus:outline-none focus:border-red-500/50 transition-all"
-                                                placeholder="https://www.youtube.com/watch?v=..."
-                                                value={ytUrl}
-                                                onChange={e => setYtUrl(e.target.value)}
-                                            />
-                                            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-red-500 transition-colors">
-                                                <Youtube size={20} />
-                                            </div>
-                                        </div>
-
-                                        <button
-                                            onClick={() => handleYoutube()}
-                                            disabled={ytLoading || !ytUrl.trim()}
-                                            className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white rounded-2xl px-6 font-medium transition-all shadow-lg shadow-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                        >
-                                            {ytLoading ? <Loader2 className="animate-spin" size={20} /> : <PlayCircle size={20} />}
-                                            <span className="hidden sm:inline">{ytLoading ? "Loading..." : "Load"}</span>
-                                        </button>
+                            {/* Input Section (Centered initially or at top) */}
+                            <div className="glass-panel p-4 rounded-2xl border border-white/10 mb-8 flex gap-4 max-w-3xl mx-auto">
+                                <div className="relative group flex-1">
+                                    <input
+                                        type="text"
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl p-3 pl-10 text-gray-200 focus:outline-none focus:border-red-500/50 transition-all text-sm"
+                                        placeholder="Paste YouTube URL here..."
+                                        value={ytUrl}
+                                        onChange={e => setYtUrl(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleYoutube()}
+                                    />
+                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-red-500 transition-colors">
+                                        <Youtube size={18} />
                                     </div>
                                 </div>
+                                <button
+                                    onClick={() => handleYoutube()}
+                                    disabled={ytLoading || !ytUrl.trim()}
+                                    className="bg-red-600 hover:bg-red-500 text-white rounded-xl px-6 font-medium transition-all shadow-lg shadow-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
+                                >
+                                    {ytLoading ? <Loader2 className="animate-spin" size={18} /> : <PlayCircle size={18} />}
+                                    <span>Load Video</span>
+                                </button>
+                            </div>
 
-                                {/* Results Area */}
-                                {(ytResult || availableLanguages.length > 0) && (
-                                    <div className="bg-black/40 rounded-2xl border border-white/5 animate-in fade-in slide-in-from-top-2 overflow-hidden">
+                            {/* Main Content Grid */}
+                            {(ytResult || availableLanguages.length > 0 || ytLoading) && (
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start h-[calc(100vh-200px)] min-h-[600px]">
 
-                                        {/* Toolbar */}
-                                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 border-b border-white/10 bg-white/5">
-                                            <div className="flex items-center gap-3">
-                                                <span className="text-xs uppercase tracking-wider text-gray-500 font-bold">Transcript</span>
-                                                {currentLangName && (
-                                                    <span className="text-xs bg-red-500/20 text-red-300 px-2 py-0.5 rounded-md border border-red-500/30">
-                                                        {currentLangName}
-                                                    </span>
-                                                )}
-                                            </div>
+                                    {/* Left Col: Video Player & Context (7 cols) */}
+                                    <div className="lg:col-span-7 flex flex-col gap-6 h-full">
 
-                                            <div className="flex items-center gap-3 w-full sm:w-auto">
-                                                {/* Language Selector */}
-                                                {availableLanguages.length > 0 && (
-                                                    <select
-                                                        className="bg-black/60 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-gray-300 focus:outline-none hover:bg-white/5 transition-colors cursor-pointer max-w-[150px]"
-                                                        value={ytLanguage}
-                                                        onChange={(e) => onLanguageChange(e.target.value)}
-                                                    >
-                                                        {availableLanguages.map((lang) => (
-                                                            <option key={lang.code} value={lang.code}>
-                                                                {lang.name} {lang.is_generated ? '(Auto)' : ''}
-                                                            </option>
-                                                        ))}
-                                                        {/* Ensure current option exists if manual entry */}
-                                                        {!availableLanguages.find(l => l.code === ytLanguage) && (
-                                                            <option value={ytLanguage}>{ytLanguage}</option>
-                                                        )}
-                                                    </select>
-                                                )}
-
-                                                <button
-                                                    onClick={() => {
-                                                        if (Array.isArray(ytResult)) {
-                                                            const text = ytResult.map(i => i.text).join(" ");
-                                                            navigator.clipboard.writeText(text);
-                                                        } else {
-                                                            navigator.clipboard.writeText(String(ytResult));
-                                                        }
-                                                    }}
-                                                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium flex items-center gap-1 ml-auto sm:ml-0"
-                                                >
-                                                    <CheckCircle size={14} />
-                                                    Copy
-                                                </button>
-                                            </div>
+                                        {/* Video Player Frame */}
+                                        <div className="glass-panel rounded-3xl overflow-hidden border border-white/10 bg-black/40 aspect-video relative flex-shrink-0 shadow-2xl shadow-black/50">
+                                            {(() => {
+                                                const videoIdMatch = ytUrl.match(/(?:v=|youtu\.be\/|\/embed\/|\/v\/)([a-zA-Z0-9_-]{11})/);
+                                                const videoId = videoIdMatch ? videoIdMatch[1] : null;
+                                                return videoId ? (
+                                                    <iframe
+                                                        src={`https://www.youtube.com/embed/${videoId}`}
+                                                        className="w-full h-full"
+                                                        allowFullScreen
+                                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                                    />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center text-gray-600">
+                                                        <Youtube size={48} className="opacity-20" />
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
 
-                                        {/* Scrollable Content */}
-                                        <div className="max-h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent p-4">
-                                            {ytLoading && !ytResult && (
-                                                <div className="flex justify-center p-8">
-                                                    <Loader2 className="animate-spin text-red-500" size={32} />
+                                        {/* AI Chat Placeholder (Bottom Left) */}
+                                        <div className="glass-panel p-6 rounded-3xl border border-white/10 flex-1 relative overflow-hidden bg-gradient-to-br from-blue-900/10 to-transparent">
+                                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500 opacity-50" />
+                                            <div className="flex flex-col h-full justify-between">
+                                                <div>
+                                                    <h3 className="text-blue-200 font-semibold mb-2 flex items-center gap-2">
+                                                        <Sparkles size={16} className="text-blue-400" />
+                                                        Video Intelligence AI
+                                                    </h3>
+                                                    <p className="text-sm text-gray-400">
+                                                        Ask questions about this video. The AI has read the full transcript context.
+                                                    </p>
                                                 </div>
-                                            )}
 
-                                            {!ytLoading && Array.isArray(ytResult) ? (
-                                                <div className="space-y-4">
-                                                    {ytResult.map((item, idx) => (
-                                                        <div key={idx} className="flex gap-4 group hover:bg-white/5 p-2 rounded-lg transition-colors">
-                                                            <span className="text-blue-500 font-mono text-xs pt-1 select-none opacity-60 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                                                                {formatTime(item.start)}
-                                                            </span>
-                                                            <p className="text-gray-300 text-sm leading-relaxed flex-1">
-                                                                {item.text}
-                                                            </p>
-                                                        </div>
-                                                    ))}
+                                                <div className="mt-4">
+                                                    <button className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-medium text-gray-300 transition-all flex items-center justify-center gap-2 group">
+                                                        <MessageSquare size={16} className="group-hover:text-blue-400 transition-colors" />
+                                                        Start AI Chat (Coming Soon)
+                                                    </button>
                                                 </div>
-                                            ) : (
-                                                <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
-                                                    {String(ytResult)}
-                                                </p>
-                                            )}
+                                            </div>
                                         </div>
                                     </div>
-                                )}
-                            </div>
+
+                                    {/* Right Col: Transcript Stream (5 cols) */}
+                                    <div className="lg:col-span-5 h-full flex flex-col glass-panel rounded-3xl border border-white/10 bg-black/20 overflow-hidden relative">
+
+                                        {/* Stream Header */}
+                                        <div className="p-4 border-b border-white/5 flex items-center justify-between bg-black/20 backdrop-blur-sm z-10">
+                                            <div className="flex items-center gap-2">
+                                                <div className="bg-red-500/20 p-1.5 rounded-lg">
+                                                    <CheckCircle size={14} className="text-red-400" />
+                                                </div>
+                                                <span className="font-semibold text-sm text-gray-200">Transcript Stream</span>
+                                            </div>
+
+                                            {/* Language Dropdown (Mini) */}
+                                            {availableLanguages.length > 0 && (
+                                                <select
+                                                    className="bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-xs text-gray-300 focus:outline-none hover:bg-white/5 transition-colors cursor-pointer max-w-[120px]"
+                                                    value={ytLanguage}
+                                                    onChange={(e) => onLanguageChange(e.target.value)}
+                                                >
+                                                    {availableLanguages.map((lang) => (
+                                                        <option key={lang.code} value={lang.code}>
+                                                            {lang.name} {lang.is_generated ? '(Auto)' : ''}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            )}
+                                        </div>
+
+                                        {/* Scrollable List */}
+                                        <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent p-4 space-y-4 relative">
+                                            {ytLoading && !ytResult && (
+                                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                                                    <Loader2 className="animate-spin text-red-500" size={32} />
+                                                    <span className="text-xs text-gray-500 animate-pulse">Extracting audio...</span>
+                                                </div>
+                                            )}
+
+                                            {!ytLoading && Array.isArray(ytResult) && ytResult.map((item, idx) => (
+                                                <div key={idx} className="flex gap-4 group">
+                                                    {/* Timestamp Bubble */}
+                                                    <div className="flex-shrink-0 pt-1">
+                                                        <div className="bg-white/5 border border-white/5 rounded-md px-2 py-1 text-[10px] font-mono text-blue-300 group-hover:bg-blue-500/10 group-hover:border-blue-500/20 transition-all select-none cursor-pointer">
+                                                            {formatTime(item.start)}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Text Bubble */}
+                                                    <div className="flex-1 py-1 px-3 rounded-xl hover:bg-white/5 transition-colors -ml-2 border border-transparent hover:border-white/5">
+                                                        <p className="text-gray-300 text-sm leading-relaxed text-pretty">
+                                                            {item.text}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            ))}
+
+                                            {/* Error State */}
+                                            {!ytLoading && typeof ytResult === 'string' && ytResult && (
+                                                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-300 text-sm">
+                                                    {ytResult}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Footer Actions */}
+                                        <div className="p-3 border-t border-white/5 bg-black/20 flex justify-end gap-2">
+                                            <button
+                                                onClick={() => {
+                                                    if (Array.isArray(ytResult)) {
+                                                        const text = ytResult.map(i => i.text).join(" ");
+                                                        navigator.clipboard.writeText(text);
+                                                    }
+                                                }}
+                                                className="text-xs flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors px-3 py-1.5 hover:bg-white/5 rounded-lg"
+                                            >
+                                                <CheckCircle size={14} />
+                                                Copy Full Text
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                </div>
+                            )}
+
+                            {/* Initial Empty State Description */}
+                            {!ytResult && !ytLoading && availableLanguages.length === 0 && (
+                                <div className="text-center py-20 opacity-50">
+                                    <Youtube className="mx-auto mb-4 text-gray-600" size={64} />
+                                    <h3 className="text-xl font-semibold text-gray-700">Ready to Watch</h3>
+                                    <p className="text-gray-600">Paste a YouTube link above to analyze.</p>
+                                </div>
+                            )}
                         </div>
                     )}
 
