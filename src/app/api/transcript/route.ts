@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Innertube, UniversalCache } from 'youtubei.js';
 import { YoutubeTranscript } from 'youtube-transcript';
+// @ts-ignore
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 // Singleton instance for performance
 let youtube: Innertube | null = null;
@@ -10,13 +12,22 @@ async function getYoutube() {
     if (!youtube) {
         try {
             console.log("[Transcript] Initializing Innertube with ANDROID client...");
-            youtube = await Innertube.create({
+
+            const options: any = {
                 cache: new UniversalCache(false),
                 generate_session_locally: true,
                 retrieve_player: false,
                 // @ts-ignore
-                device_type: 'ANDROID' // Force Android client to bypass Web-based IP blocks
-            });
+                device_type: 'ANDROID' // Force Android client
+            };
+
+            // Add Proxy if available in Env
+            if (process.env.PROXY_URL) {
+                console.log("[Transcript] Using Proxy: " + process.env.PROXY_URL);
+                options.http_agent = new HttpsProxyAgent(process.env.PROXY_URL);
+            }
+
+            youtube = await Innertube.create(options);
         } catch (e) {
             console.error("Innertube Init Error:", e);
             throw e;
