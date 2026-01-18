@@ -9,9 +9,14 @@ let youtube: Innertube | null = null;
 async function getYoutube() {
     if (!youtube) {
         try {
+            console.log("[Transcript] Initializing Innertube with ANDROID client...");
             youtube = await Innertube.create({
                 cache: new UniversalCache(false),
-                generate_session_locally: true
+                generate_session_locally: true,
+                retrieve_player: false
+                // device_type: 'ANDROID' // Using default wrapper but could enforce if needed. 
+                // Note: The library usually rotates clients, but let's stick to default first with better headers in manual fetch.
+                // If this fails, we can explicitly set device_type: 'ANDROID' in next iteration.
             });
         } catch (e) {
             console.error("Innertube Init Error:", e);
@@ -41,6 +46,7 @@ export async function POST(req: NextRequest) {
         }
 
         const yt = await getYoutube();
+        let errorLog: string[] = [];
 
         // 0. Get Basic Info
         let info;
@@ -71,15 +77,16 @@ export async function POST(req: NextRequest) {
         try {
             console.log(`[Transcript] Attempting Innertube transcript fetch...`);
             transcriptData = await info.getTranscript();
-        } catch (innerError) {
-            console.error("[Transcript] Innertube getTranscript failed, trying manual XML fetch:", innerError);
+        } catch (innerError: any) {
+            const msg = `Innertube Method Failed: ${innerError.message}`;
+            console.error(msg);
+            errorLog.push(msg);
 
             // 1b. Manual XML Fetch (Robust Fallback for 400 errors)
             try {
-                const tracks = info.captions?.caption_tracks;
-                if (tracks && tracks.length > 0) {
+                if (captionTracks.length > 0) {
                     // Find best track (try to match targetLang, otherwise first)
-                    const sortTracks = [...tracks].sort((a, b) => {
+                    const sortTracks = [...captionTracks].sort((a: any, b: any) => {
                         if (a.language_code === targetLang) return -1;
                         if (b.language_code === targetLang) return 1;
                         return 0;
@@ -88,7 +95,17 @@ export async function POST(req: NextRequest) {
                     console.log(`[Transcript] Manual fetch using track: ${bestTrack.language_code}`);
 
                     if (bestTrack.base_url) {
-                        const xmlRes = await fetch(bestTrack.base_url);
+                        // ADD HEADERS HERE to mimic browser
+                        const xmlRes = await fetch(bestTrack.base_url, {
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                                'Referer': 'https://www.youtube.com/',
+                                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                            }
+                        });
+
+                        if (!xmlRes.ok) throw new Error(`XML fetch status: ${xmlRes.status}`);
+
                         const xmlText = await xmlRes.text();
 
                         // Simple Regex Parse
@@ -111,11 +128,17 @@ export async function POST(req: NextRequest) {
                         if (items.length > 0) {
                             transcriptData = { transcript: items };
                             console.log(`[Transcript] Manual XML parse successful. Items: ${items.length}`);
+                        } else {
+                            throw new Error("XML parsed but no items found");
                         }
                     }
+                } else {
+                    throw new Error("No caption tracks available for manual fetch");
                 }
-            } catch (manualError) {
-                console.error("[Transcript] Manual XML fetch failed:", manualError);
+            } catch (manualError: any) {
+                const msg = `Manual XML Method Failed: ${manualError.message}`;
+                console.error(msg);
+                errorLog.push(msg);
             }
         }
 
@@ -136,8 +159,10 @@ export async function POST(req: NextRequest) {
                     }))
                 };
                 console.log(`[Transcript] Fallback successful.`);
-            } catch (fallbackError) {
-                console.error("[Transcript] Fallback failed:", fallbackError);
+            } catch (fallbackError: any) {
+                const msg = `YoutubeTranscript (Lang=${targetLang}) Failed: ${fallbackError.message}`;
+                console.error(msg);
+                errorLog.push(msg);
 
                 // 2b. BLIND FALLBACK: Try without any language param (let library decide)
                 try {
@@ -153,8 +178,10 @@ export async function POST(req: NextRequest) {
                         }))
                     };
                     console.log(`[Transcript] Blind fallback successful.`);
-                } catch (blindError) {
-                    console.error("[Transcript] Blind fallback failed:", blindError);
+                } catch (blindError: any) {
+                    const msg = `Blind Fallback Failed: ${blindError.message}`;
+                    console.error(msg);
+                    errorLog.push(msg);
                 }
             }
         }
@@ -163,7 +190,11 @@ export async function POST(req: NextRequest) {
         let selectedTranscript = transcriptData || fallbackTranscript;
 
         if (!selectedTranscript) {
-            return NextResponse.json({ error: "No transcript found (both strategies failed). Video might not have captions." }, { status: 404 });
+            // Return detailed errors to help debug
+            return NextResponse.json({
+                error: "No transcript found. All methods failed.",
+                debug_log: errorLog
+            }, { status: 404 });
         }
 
         // 4. Handle Language Selection (Only applicable if Innertube succeeded and has tracks)
