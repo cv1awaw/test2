@@ -108,7 +108,9 @@ export async function POST(req: NextRequest) {
             // Segments are usually: { text: string, offset: { seconds... }, duration: { seconds... } }
 
             // Let's normalize to: { text, start, duration }
-            const normalizedTranscript = (selectedTranscript.transcript || []).map((seg: any) => ({
+            const segments = (selectedTranscript as any).transcript || [];
+
+            const normalizedTranscript = segments.map((seg: any) => ({
                 text: seg.text || "",
                 start: Number(seg.offset?.seconds || seg.offset || 0),
                 duration: Number(seg.duration?.seconds || seg.duration || 0)
