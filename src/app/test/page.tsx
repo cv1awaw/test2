@@ -54,7 +54,10 @@ export default function TestPage() {
     }, []);
 
     useEffect(() => {
-        if (mmResult && (mmResult.startsWith('graph') || mmResult.startsWith('mindmap'))) {
+        // Robust check for mermaid content
+        const isMermaid = /^(mindmap|graph|flowchart|sequenceDiagram)/m.test(mmResult);
+
+        if (mmResult && isMermaid) {
             const renderMap = async () => {
                 try {
                     const element = document.getElementById("mermaid-output");
@@ -65,6 +68,9 @@ export default function TestPage() {
                     }
                 } catch (e) {
                     console.error("Mermaid Render Error", e);
+                    // Optional: Display error in UI
+                    const element = document.getElementById("mermaid-output");
+                    if (element) element.innerText = "Failed to render graph. Syntax error in response.";
                 }
             }
             renderMap();
@@ -143,9 +149,9 @@ export default function TestPage() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    model: "gpt-5", // Or gpt-4o as needed
+                    model: "gpt-5",
                     messages: [
-                        { role: "system", content: "You are a Mind Map Generator. Output ONLY valid Mermaid.js syntax. Start immediately with `mindmap` or `graph TD`. Do not use code blocks." },
+                        { role: "system", content: "You are a Mind Map Generator. Output ONLY valid Mermaid.js syntax. Start immediately with `mindmap` or `graph TD`. Do not use code blocks or markdown formatting." },
                         { role: "user", content: `Create a comprehensive mind map about: ${mmInput}` }
                     ],
                     stream: false
@@ -153,8 +159,16 @@ export default function TestPage() {
             });
             const data = await res.json();
             let content = data.choices?.[0]?.message?.content || "";
-            // Cleanup common LLM artifacts
+
+            // Cleaning pipeline
             content = content.replace(/```mermaid/g, "").replace(/```/g, "").trim();
+
+            // Find start of valid mermaid syntax
+            const mindmapStart = content.search(/^(mindmap|graph|flowchart|sequenceDiagram)/m);
+            if (mindmapStart !== -1) {
+                content = content.substring(mindmapStart);
+            }
+
             setMmResult(content);
         } catch (e: any) {
             setMmResult("Error: " + e.message);
