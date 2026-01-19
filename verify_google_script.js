@@ -1,11 +1,13 @@
 const fetch = require('node-fetch');
 
-// User provided URL
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyDENL0LaKRQH6k5qhyBJy66vLdQ609batNQcbRrP_NNDpK70X72VLt_eizIoOUo1h3sg/exec";
-const VIDEO_ID = "PVEi8KnD56o"; // Previous test video
+// User provided URL (V4)
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwPvzAmNC4DM7TbqHm9MxVOLtXzawJIDm3Ja4qLfyeF7a4yugxdIjlXAaJtLpyUkgWo2A/exec";
+const VIDEO_ID = "jNQXAC9IVRw"; // Me at the zoo (Control Test)
 
 async function testScript() {
     console.log("Testing Google Script URL...");
+    console.log("URL:", SCRIPT_URL);
+    console.log("Video:", VIDEO_ID);
     const url = `${SCRIPT_URL}?v=${VIDEO_ID}`;
 
     try {

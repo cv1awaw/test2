@@ -1,8 +1,8 @@
-// 100% FREE YOUTUBE TRANSCRIPT API (V3 - PLAYER RESPONSE)
-// 1. Go to https://script.google.com/
-// 2. Paste this code into Code.gs (Overwrite everything)
-// 3. Click "Deploy" -> "Manage Deployments" -> Edit -> Upload New Version -> Deploy
-// 4. Use the same URL.
+// 100% FREE YOUTUBE TRANSCRIPT API (V5 - ANDROID CLIENT)
+// This version uses the Mobile App API which is much harder to block.
+
+// 1. Paste into Code.gs
+// 2. Deploy -> Manage Deployments -> New Version -> Deploy
 
 function doGet(e) {
     try {
@@ -10,16 +10,11 @@ function doGet(e) {
         var lang = e.parameter.lang || 'en';
         if (!videoId) return jsonResponse({ error: "Missing 'v' param" });
 
-        // 1. Try Desktop Page
-        var transcript = fetchTranscript(videoId, lang, false);
-
-        // 2. Try Mobile Page
-        if (!transcript) {
-            transcript = fetchTranscript(videoId, lang, true);
-        }
+        // Try Android Client (Most Robust)
+        var transcript = fetchTranscript(videoId, lang);
 
         if (!transcript) {
-            return jsonResponse({ error: "No captions found. Video might be age-gated/region-locked." });
+            return jsonResponse({ error: "No captions found. Video might be age-gated." });
         }
 
         return jsonResponse({
@@ -34,73 +29,53 @@ function doGet(e) {
     }
 }
 
-function fetchTranscript(videoId, targetLang, useMobile) {
-    var url = useMobile
-        ? "https://m.youtube.com/watch?v=" + videoId
-        : "https://www.youtube.com/watch?v=" + videoId;
-
-    var ua = useMobile
-        ? "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1"
-        : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
-
-    var pageContent = UrlFetchApp.fetch(url, {
-        muteHttpExceptions: true,
-        headers: {
-            "User-Agent": ua,
-            "Accept-Language": "en-US,en;q=0.9",
-            "Cookie": "CONSENT=YES+cb.20210328-17-p0.en+FX+417;"
-        }
-    }).getContentText();
-
-    // Strategy A: Direct captionTracks regex
-    var tracks = extractTracks(pageContent, /"captionTracks":(\[.*?\])/);
-
-    // Strategy B: player_response regex (often escaped)
-    if (!tracks) {
-        var playerResp = extractAuth(pageContent, /var ytInitialPlayerResponse\s*=\s*({.+?});/);
-        if (playerResp) {
-            if (playerResp.captions && playerResp.captions.playerCaptionsTracklistRenderer) {
-                tracks = playerResp.captions.playerCaptionsTracklistRenderer.captionTracks;
+function fetchTranscript(videoId, targetLang) {
+    // ANDROID CLIENT PAYLOAD (Bypasses most blocks)
+    var payload = {
+        context: {
+            client: {
+                clientName: 'ANDROID',
+                clientVersion: '16.20.35',
+                hl: 'en',
+                gl: 'US',
+                androidSdkVersion: 29
             }
-        }
+        },
+        videoId: videoId
+    };
+
+    var response = UrlFetchApp.fetch("https://www.youtube.com/youtubei/v1/player", {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+    });
+
+    var text = response.getContentText();
+    var data = JSON.parse(text);
+
+    // 2. Extract Captions
+    var tracks = null;
+    if (data.captions && data.captions.playerCaptionsTracklistRenderer) {
+        tracks = data.captions.playerCaptionsTracklistRenderer.captionTracks;
     }
 
     if (!tracks) return null;
 
-    // Filter Track
+    // 3. Find Best Track
     var track = tracks.find(function (t) { return t.languageCode === targetLang; });
     if (!track) track = tracks.find(function (t) { return t.languageCode === 'en'; });
     if (!track) track = tracks[0];
 
     if (!track) return null;
 
-    // Fetch XML
+    // 4. Fetch XML Transcript
     var xmlContent = UrlFetchApp.fetch(track.baseUrl, { muteHttpExceptions: true }).getContentText();
-    var items = parseXmlTranscript(xmlContent);
-
     return {
-        items: items,
+        items: parseXmlTranscript(xmlContent),
         langCode: track.languageCode,
         langName: track.name.simpleText
     };
-}
-
-function extractTracks(html, regex) {
-    var match = html.match(regex);
-    if (match && match[1]) {
-        return JSON.parse(match[1]);
-    }
-    return null;
-}
-
-function extractAuth(html, regex) {
-    var match = html.match(regex);
-    if (match && match[1]) {
-        try {
-            return JSON.parse(match[1]);
-        } catch (e) { }
-    }
-    return null;
 }
 
 function parseXmlTranscript(xml) {
