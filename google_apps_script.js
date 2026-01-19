@@ -1,101 +1,62 @@
-// 100% FREE YOUTUBE TRANSCRIPT API (V5 - ANDROID CLIENT)
-// This version uses the Mobile App API which is much harder to block.
-
-// 1. Paste into Code.gs
-// 2. Deploy -> Manage Deployments -> New Version -> Deploy
+// 100% FREE YOUTUBE TRANSCRIPT API (V9 - VIATOSIS PROXY)
+// This version routes through the Viatosis backend which is currently working.
 
 function doGet(e) {
+    var videoId = e.parameter.v;
+    var lang = e.parameter.lang || 'en';
+
+    if (!videoId) return jsonResponse({ status: "active", version: "v9-viatosis" });
+
     try {
-        var videoId = e.parameter.v;
-        var lang = e.parameter.lang || 'en';
-        if (!videoId) return jsonResponse({ error: "Missing 'v' param" });
+        var url = "https://www.viatosis.tech/api/youtube-transcripts";
+        var payload = {
+            videoId: videoId,
+            country: "us"
+        };
 
-        // Try Android Client (Most Robust)
-        var transcript = fetchTranscript(videoId, lang);
+        var response = UrlFetchApp.fetch(url, {
+            method: 'post',
+            contentType: 'application/json',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Origin': 'https://www.viatosis.tech',
+                'Referer': 'https://www.viatosis.tech/viatosis-caption-lab'
+            },
+            payload: JSON.stringify(payload),
+            muteHttpExceptions: true
+        });
 
-        if (!transcript) {
-            return jsonResponse({ error: "No captions found. Video might be age-gated." });
+        var responseCode = response.getResponseCode();
+        if (responseCode !== 200) {
+            return jsonResponse({ error: "Viatosis Proxy Failed: " + responseCode + " " + response.getContentText() });
         }
+
+        var data = JSON.parse(response.getContentText());
+
+        if (!data.ok || !data.data || !data.data.transcripts) {
+            return jsonResponse({ error: "No transcript found in Viatosis response." });
+        }
+
+        // Map their format to ours
+        var items = data.data.transcripts.map(function (t) {
+            return {
+                text: t.text,
+                start: t.start,
+                duration: t.duration
+            };
+        });
 
         return jsonResponse({
             success: true,
-            transcript: transcript.items,
-            language: transcript.langCode,
-            language_name: transcript.langName
+            transcript: items,
+            language: "en", // they seem to default to english/auto
+            language_name: "English",
+            source: "Viatosis Proxy"
         });
 
     } catch (err) {
         return jsonResponse({ error: "Server Error: " + err.toString() });
     }
-}
-
-function fetchTranscript(videoId, targetLang) {
-    // ANDROID CLIENT PAYLOAD (Bypasses most blocks)
-    var payload = {
-        context: {
-            client: {
-                clientName: 'ANDROID',
-                clientVersion: '16.20.35',
-                hl: 'en',
-                gl: 'US',
-                androidSdkVersion: 29
-            }
-        },
-        videoId: videoId
-    };
-
-    var response = UrlFetchApp.fetch("https://www.youtube.com/youtubei/v1/player", {
-        method: 'post',
-        contentType: 'application/json',
-        payload: JSON.stringify(payload),
-        muteHttpExceptions: true
-    });
-
-    var text = response.getContentText();
-    var data = JSON.parse(text);
-
-    // 2. Extract Captions
-    var tracks = null;
-    if (data.captions && data.captions.playerCaptionsTracklistRenderer) {
-        tracks = data.captions.playerCaptionsTracklistRenderer.captionTracks;
-    }
-
-    if (!tracks) return null;
-
-    // 3. Find Best Track
-    var track = tracks.find(function (t) { return t.languageCode === targetLang; });
-    if (!track) track = tracks.find(function (t) { return t.languageCode === 'en'; });
-    if (!track) track = tracks[0];
-
-    if (!track) return null;
-
-    // 4. Fetch XML Transcript
-    var xmlContent = UrlFetchApp.fetch(track.baseUrl, { muteHttpExceptions: true }).getContentText();
-    return {
-        items: parseXmlTranscript(xmlContent),
-        langCode: track.languageCode,
-        langName: track.name.simpleText
-    };
-}
-
-function parseXmlTranscript(xml) {
-    var items = [];
-    var regex = /<text start="([\d.]+)" dur="([\d.]+)"[^>]*>([^<]+)<\/text>/g;
-    var match;
-
-    var decode = function (str) {
-        if (!str) return "";
-        return str.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\+/g, ' ');
-    };
-
-    while ((match = regex.exec(xml)) !== null) {
-        items.push({
-            start: parseFloat(match[1]),
-            duration: parseFloat(match[2]),
-            text: decode(match[3])
-        });
-    }
-    return items;
 }
 
 function jsonResponse(data) {

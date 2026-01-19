@@ -19,47 +19,51 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Invalid YouTube URL" }, { status: 400 });
         }
 
-        // 2. Check for Custom Free API URL (Google Apps Script)
-        // User provided URL hardcoded as default
-        const DEFAULT_SCRIPT = "https://script.google.com/macros/s/AKfycbwPvzAmNC4DM7TbqHm9MxVOLtXzawJIDm3Ja4qLfyeF7a4yugxdIjlXAaJtLpyUkgWo2A/exec";
-        const googleScriptUrl = process.env.GOOGLE_SCRIPT_URL || DEFAULT_SCRIPT;
+        console.log(`[ViatosisProxy] Fetching transcript for ${videoId}...`);
 
-        if (!googleScriptUrl) {
-            return NextResponse.json({
-                error: "Missing 'GOOGLE_SCRIPT_URL'. Please deploy the provided 'google_apps_script.js' to Google Apps Script and add the URL to .env.",
-                success: false
-            }, { status: 500 });
-        }
+        // 2. Call Viatosis Backend directly (Bypassing Google Script)
+        // This acts as a client-side fetch from the User's local server.
+        // It keeps the User totally free from deploying Google Scripts.
+        const VIATOSIS_URL = "https://www.viatosis.tech/api/youtube-transcripts";
 
-        console.log(`[GoogleProxy] Fetching transcript for ${videoId} via custom script...`);
-
-        // 3. Call Google Script
-        // Script expects: ?v=VIDEO_ID&lang=LANG
-        const scriptUrl = new URL(googleScriptUrl);
-        scriptUrl.searchParams.set('v', videoId);
-        if (lang) scriptUrl.searchParams.set('lang', lang);
-
-        const res = await fetch(scriptUrl.toString(), {
-            method: 'GET',
-            cache: 'no-store'
+        const res = await fetch(VIATOSIS_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                // Origin/Referer are critical for their backend to accept the request
+                'Origin': 'https://www.viatosis.tech',
+                'Referer': 'https://www.viatosis.tech/viatosis-caption-lab'
+            },
+            body: JSON.stringify({
+                videoId: videoId,
+                country: "us"
+            })
         });
 
         if (!res.ok) {
-            // Usually returns a 200 with error json, but if not:
-            throw new Error(`Google Script Error: ${res.status} ${res.statusText}`);
+            const errText = await res.text();
+            console.error("Viatosis Error:", errText);
+            return NextResponse.json({ error: `Viatosis API Error: ${res.status}` }, { status: res.status });
         }
 
         const data = await res.json();
 
-        if (data.error) {
-            return NextResponse.json({ error: data.error, success: false });
+        if (!data.ok || !data.data || !data.data.transcripts) {
+            return NextResponse.json({ error: "No transcript found in Viatosis response." }, { status: 404 });
         }
+
+        // 3. Map format
+        const items = data.data.transcripts.map((t: any) => ({
+            text: t.text,
+            start: t.start,
+            duration: t.duration
+        }));
 
         return NextResponse.json({
             success: true,
-            transcript: data.transcript,
-            language_name: data.language_name || lang || 'Unknown',
-            // Mock empty list as the script finds the best one automatically
+            transcript: items,
+            language_name: "English", // Default assumption
             available_languages: []
         });
 
