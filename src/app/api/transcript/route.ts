@@ -1,7 +1,7 @@
 
 import { NextResponse } from 'next/server';
 
-export const runtime = 'edge'; // Use Edge for speed
+export const runtime = 'edge';
 
 export async function POST(req: Request) {
     try {
@@ -11,59 +11,54 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "URL is required" }, { status: 400 });
         }
 
-        // 1. Check for API Key
-        const apiKey = process.env.SUPADATA_API_KEY;
-        if (!apiKey) {
-            return NextResponse.json({
-                error: "Missing API Key. Please get a free key from https://supadata.ai and add 'SUPADATA_API_KEY' to your .env file.",
-                success: false
-            }, { status: 401 });
+        // 1. Extract Video ID
+        const match = url.match(/(?:v=|youtu\.be\/|\/embed\/|\/v\/)([a-zA-Z0-9_-]{11})/);
+        const videoId = match ? match[1] : null;
+
+        if (!videoId) {
+            return NextResponse.json({ error: "Invalid YouTube URL" }, { status: 400 });
         }
 
-        console.log(`[Supadata] Fetching transcript for ${url} (Lang: ${lang || 'en'})`);
+        // 2. Check for Custom Free API URL (Google Apps Script)
+        const googleScriptUrl = process.env.GOOGLE_SCRIPT_URL;
 
-        // 2. Call Supadata API
-        // Doc: GET https://api.supadata.ai/v1/transcript?url=...&lang=...
-        const apiUrl = new URL('https://api.supadata.ai/v1/transcript');
-        apiUrl.searchParams.set('url', url);
-        if (lang) apiUrl.searchParams.set('lang', lang);
+        if (!googleScriptUrl) {
+            return NextResponse.json({
+                error: "Missing 'GOOGLE_SCRIPT_URL'. Please deploy the provided 'google_apps_script.js' to Google Apps Script and add the URL to .env.",
+                success: false
+            }, { status: 500 });
+        }
 
-        const res = await fetch(apiUrl.toString(), {
+        console.log(`[GoogleProxy] Fetching transcript for ${videoId} via custom script...`);
+
+        // 3. Call Google Script
+        // Script expects: ?v=VIDEO_ID&lang=LANG
+        const scriptUrl = new URL(googleScriptUrl);
+        scriptUrl.searchParams.set('v', videoId);
+        if (lang) scriptUrl.searchParams.set('lang', lang);
+
+        const res = await fetch(scriptUrl.toString(), {
             method: 'GET',
-            headers: {
-                'x-api-key': apiKey
-            }
+            cache: 'no-store'
         });
+
+        if (!res.ok) {
+            // Usually returns a 200 with error json, but if not:
+            throw new Error(`Google Script Error: ${res.status} ${res.statusText}`);
+        }
 
         const data = await res.json();
 
-        if (!res.ok) {
-            console.error("[Supadata] Error:", data);
-            return NextResponse.json({
-                error: `Supadata API Error: ${data.message || res.statusText}`,
-                success: false
-            }, { status: res.status });
+        if (data.error) {
+            return NextResponse.json({ error: data.error, success: false });
         }
-
-        // 3. Transform Response
-        // Supadata returns: { content: "...", segments: [{ text, start, duration, offset }] }
-        // We need to map it to our format: { text, start, duration }
-
-        if (!data.segments) {
-            return NextResponse.json({ error: "No transcript segments found.", success: false });
-        }
-
-        const transcript = data.segments.map((s: any) => ({
-            text: s.text,
-            start: s.start, // or s.offset
-            duration: s.duration
-        }));
 
         return NextResponse.json({
             success: true,
-            transcript: transcript,
-            language_name: data.language || lang || 'Unknown',
-            available_languages: [] // Supadata might not return list of *other* languages easily in one call, but that's fine.
+            transcript: data.transcript,
+            language_name: data.language_name || lang || 'Unknown',
+            // Mock empty list as the script finds the best one automatically
+            available_languages: []
         });
 
     } catch (error: any) {
