@@ -19,6 +19,22 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Invalid YouTube URL" }, { status: 400 });
         }
 
+        // --- SECURITY GUARD ---
+        // Prevent others from "stealing" or using your API.
+        const origin = req.headers.get('origin');
+        const referer = req.headers.get('referer');
+
+        // Allow requests ONLY from your hosted domain and localhost (for testing)
+        // We check if the request comes from "vercel.app" or "localhost"
+        const isAllowed = (origin && (origin.includes('vercel.app') || origin.includes('localhost'))) ||
+            (referer && (referer.includes('vercel.app') || referer.includes('localhost')));
+
+        if (!isAllowed) {
+            console.error(`[Security] Blocked request from: ${origin || referer}`);
+            return NextResponse.json({ error: "Access Denied. This API is protected." }, { status: 403 });
+        }
+        // ----------------------
+
         console.log(`[ViatosisProxy] Fetching transcript for ${videoId}...`);
 
         // 2. Call Viatosis Backend directly (Bypassing Google Script)
