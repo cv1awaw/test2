@@ -203,7 +203,77 @@ export default function TestPage() {
         }
 
         if (!success) {
-            setYtResult("Failed to fetch transcript. All public APIs blocked or unavailable. Errors: " + errors.slice(0, 3).join(", "));
+            // FALLBACK: DIRECT HTML SCRAPE VIA CORS PROXY
+            try {
+                console.log("[Fallback] Trying CORS Proxy Scrape...");
+                const corsProxy = "https://corsproxy.io/?";
+                const targetUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+                const res = await fetch(corsProxy + encodeURIComponent(targetUrl));
+                const html = await res.text();
+
+                // Extract Caption Tracks
+                const regex = /"captionTracks":(\[.*?\])/;
+                const match = regex.exec(html);
+
+                if (match && match[1]) {
+                    const tracks = JSON.parse(match[1]);
+                    // console.log("Found tracks via Proxy:", tracks);
+
+                    // Find match
+                    let track = tracks.find((t: any) => t.languageCode === langCode);
+                    if (!track) track = tracks.find((t: any) => t.languageCode === 'en');
+                    if (!track) track = tracks[0];
+
+                    if (track) {
+                        console.log(`[Fallback] Found encoded track: ${track.baseUrl}`);
+
+                        // Fetch XML Transcript through Proxy again (to avoid CORS)
+                        const xmlRes = await fetch(corsProxy + encodeURIComponent(track.baseUrl));
+                        const xmlText = await xmlRes.text();
+
+                        // Parse XML
+                        // Format: <text start="0.5" dur="3.2">Hello world</text>
+                        const items: TranscriptItem[] = [];
+                        const xmlRegex = /<text start="([\d.]+)" dur="([\d.]+)"[^>]*>([^<]+)<\/text>/g;
+                        let xMatch;
+
+                        // Handle HTML entities in XML
+                        const decodeHtml = (html: string) => {
+                            const txt = document.createElement("textarea");
+                            txt.innerHTML = html;
+                            return txt.value;
+                        };
+
+                        while ((xMatch = xmlRegex.exec(xmlText)) !== null) {
+                            items.push({
+                                start: parseFloat(xMatch[1]),
+                                duration: parseFloat(xMatch[2]),
+                                text: decodeHtml(xMatch[3])
+                            });
+                        }
+
+                        if (items.length > 0) {
+                            setYtResult(items);
+                            setCurrentLangName(track.name.simpleText);
+                            // Mock languages
+                            setAvailableLanguages(tracks.map((t: any) => ({
+                                code: t.languageCode,
+                                name: t.name.simpleText,
+                                is_generated: t.vssId?.startsWith('a.')
+                            })));
+                            success = true;
+                        }
+                    }
+                }
+            } catch (fbErr: any) {
+                console.warn("[Fallback] CORS Proxy failed:", fbErr);
+                errors.push(`CORS Proxy: ${fbErr.message}`);
+            }
+        }
+
+        if (!success) {
+            setYtResult("Failed to fetch transcript. All public APIs and scraping methods failed. Errors: " + errors.slice(0, 3).join(", "));
         }
         setYtLoading(false);
     };
