@@ -24,7 +24,13 @@ export async function POST(req: Request) {
         // 2. Call Viatosis Backend directly (Bypassing Google Script)
         // This acts as a client-side fetch from the User's local server.
         // It keeps the User totally free from deploying Google Scripts.
-        const VIATOSIS_URL = "https://www.viatosis.tech/api/youtube-transcripts";
+        // URL is hidden in Environment Variables for security.
+        const VIATOSIS_URL = process.env.VIATOSIS_API_URL || "";
+
+        if (!VIATOSIS_URL) {
+            console.error("Missing VIATOSIS_API_URL in environment variables.");
+            return NextResponse.json({ error: "Configuration Error: Missing API URL" }, { status: 500 });
+        }
 
         const res = await fetch(VIATOSIS_URL, {
             method: 'POST',
