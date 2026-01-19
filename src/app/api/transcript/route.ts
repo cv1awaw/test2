@@ -21,7 +21,7 @@ export async function POST(req: Request) {
 
         // 2. Check for Custom Free API URL (Google Apps Script)
         // User provided URL hardcoded as default
-        const DEFAULT_SCRIPT = "https://script.google.com/macros/s/AKfycbzVoIc5bmjdGqTedP12MHWf82N9tjhtMYWW3NZdmx6EluNmHgUSXz7h2wfnJABhvzprKw/exec";
+        const DEFAULT_SCRIPT = "https://script.google.com/macros/s/AKfycbyDENL0LaKRQH6k5qhyBJy66vLdQ609batNQcbRrP_NNDpK70X72VLt_eizIoOUo1h3sg/exec";
         const googleScriptUrl = process.env.GOOGLE_SCRIPT_URL || DEFAULT_SCRIPT;
 
         if (!googleScriptUrl) {

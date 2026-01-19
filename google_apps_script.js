@@ -1,26 +1,25 @@
-// 100% FREE YOUTUBE TRANSCRIPT API (V2 - ROBUST)
+// 100% FREE YOUTUBE TRANSCRIPT API (V3 - PLAYER RESPONSE)
 // 1. Go to https://script.google.com/
 // 2. Paste this code into Code.gs (Overwrite everything)
 // 3. Click "Deploy" -> "Manage Deployments" -> Edit -> Upload New Version -> Deploy
-// 4. Use the SAME URL.
+// 4. Use the same URL.
 
 function doGet(e) {
     try {
         var videoId = e.parameter.v;
         var lang = e.parameter.lang || 'en';
-
         if (!videoId) return jsonResponse({ error: "Missing 'v' param" });
 
-        // Try Desktop Page first with Consent Cookie
+        // 1. Try Desktop Page
         var transcript = fetchTranscript(videoId, lang, false);
 
-        // Fallback to Mobile Page if Desktop fails
+        // 2. Try Mobile Page
         if (!transcript) {
             transcript = fetchTranscript(videoId, lang, true);
         }
 
         if (!transcript) {
-            return jsonResponse({ error: "No captions found. Video might be age-gated or have no subs." });
+            return jsonResponse({ error: "No captions found. Video might be age-gated/region-locked." });
         }
 
         return jsonResponse({
@@ -48,19 +47,27 @@ function fetchTranscript(videoId, targetLang, useMobile) {
         muteHttpExceptions: true,
         headers: {
             "User-Agent": ua,
-            "Cookie": "CONSENT=YES+cb.20210328-17-p0.en+FX+417; PREF=f6=40000000&hl=en;"
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cookie": "CONSENT=YES+cb.20210328-17-p0.en+FX+417;"
         }
     }).getContentText();
 
-    // Regex to find captionTracks
-    var regex = /"captionTracks":(\[.*?\])/;
-    var match = pageContent.match(regex);
+    // Strategy A: Direct captionTracks regex
+    var tracks = extractTracks(pageContent, /"captionTracks":(\[.*?\])/);
 
-    if (!match || !match[1]) return null;
+    // Strategy B: player_response regex (often escaped)
+    if (!tracks) {
+        var playerResp = extractAuth(pageContent, /var ytInitialPlayerResponse\s*=\s*({.+?});/);
+        if (playerResp) {
+            if (playerResp.captions && playerResp.captions.playerCaptionsTracklistRenderer) {
+                tracks = playerResp.captions.playerCaptionsTracklistRenderer.captionTracks;
+            }
+        }
+    }
 
-    var tracks = JSON.parse(match[1]);
+    if (!tracks) return null;
 
-    // Find best track
+    // Filter Track
     var track = tracks.find(function (t) { return t.languageCode === targetLang; });
     if (!track) track = tracks.find(function (t) { return t.languageCode === 'en'; });
     if (!track) track = tracks[0];
@@ -76,6 +83,24 @@ function fetchTranscript(videoId, targetLang, useMobile) {
         langCode: track.languageCode,
         langName: track.name.simpleText
     };
+}
+
+function extractTracks(html, regex) {
+    var match = html.match(regex);
+    if (match && match[1]) {
+        return JSON.parse(match[1]);
+    }
+    return null;
+}
+
+function extractAuth(html, regex) {
+    var match = html.match(regex);
+    if (match && match[1]) {
+        try {
+            return JSON.parse(match[1]);
+        } catch (e) { }
+    }
+    return null;
 }
 
 function parseXmlTranscript(xml) {

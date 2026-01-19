@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 
 // User provided URL
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzVoIc5bmjdGqTedP12MHWf82N9tjhtMYWW3NZdmx6EluNmHgUSXz7h2wfnJABhvzprKw/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyDENL0LaKRQH6k5qhyBJy66vLdQ609batNQcbRrP_NNDpK70X72VLt_eizIoOUo1h3sg/exec";
 const VIDEO_ID = "PVEi8KnD56o"; // Previous test video
 
 async function testScript() {
