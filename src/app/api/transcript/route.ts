@@ -56,6 +56,7 @@ export async function POST(req: Request) {
             },
             body: JSON.stringify({
                 videoId: videoId,
+                lang: lang || 'en', // Forward the requested language
                 country: "us"
             })
         });
