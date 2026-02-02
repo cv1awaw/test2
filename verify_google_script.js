@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 
 // User provided URL (V4)
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwPvzAmNC4DM7TbqHm9MxVOLtXzawJIDm3Ja4qLfyeF7a4yugxdIjlXAaJtLpyUkgWo2A/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzXLVvpCTYVFNRTpJRdiyfodKJESw5w3guIpm3MKgeV0-zk8AO0cTsBEdbAp7X5_qNnXQ/exec";
 const VIDEO_ID = "jNQXAC9IVRw"; // Me at the zoo (Control Test)
 
 async function testScript() {
@@ -23,7 +23,7 @@ async function testScript() {
             console.log("First line:", data.transcript[0]);
             console.log("Total lines:", data.transcript.length);
         } else {
-            console.log("Error from Script:", data.error);
+            console.log("Script Response:", JSON.stringify(data, null, 2));
         }
     } catch (e) {
         console.error("Test Failed:", e);
